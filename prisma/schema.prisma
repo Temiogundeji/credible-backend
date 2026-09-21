@@ -1,0 +1,633 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgencyStatus {
+  pending
+  active
+  suspended
+  closed
+}
+
+enum MembershipRole {
+  admin
+  finance_reviewer
+  agent
+  support
+  auditor
+}
+
+enum MembershipStatus {
+  invited
+  active
+  suspended
+  removed
+}
+
+enum OneTimeTokenPurpose {
+  email_verification
+  password_reset
+}
+
+enum MfaFactorType {
+  passkey
+  totp
+}
+
+enum AgentStatus {
+  active
+  inactive
+}
+
+enum ContributorStatus {
+  invited
+  pending_verification
+  active
+  suspended
+  deactivated
+}
+
+enum ContributorPlanFrequency {
+  daily
+  weekly
+}
+
+enum ContributorPlanStatus {
+  draft
+  active
+  suspended
+  superseded
+}
+
+enum ContributorObligationStatus {
+  scheduled
+  overdue
+  partial
+  paid
+  credited
+}
+
+enum LedgerAccountType {
+  asset
+  liability
+  equity
+  revenue
+}
+
+enum LedgerAccountStatus {
+  active
+  inactive
+}
+
+enum LedgerJournalStatus {
+  posted
+  reversed
+}
+
+enum LedgerDirection {
+  debit
+  credit
+}
+
+enum ContributionStatus {
+  posted
+  reversed
+}
+
+enum ContributionPaymentMethod {
+  cash
+  bank_transfer
+  mobile_money
+}
+
+enum ContributionAllocationType {
+  obligation
+  overpayment_credit
+}
+
+enum ContributorCreditStatus {
+  available
+  applied
+  refunded
+  reversed
+}
+
+enum ContributionImportStatus {
+  uploaded
+  validating
+  ready
+  committed
+  rejected
+}
+
+enum ContributionImportRowStatus {
+  pending
+  valid
+  invalid
+  committed
+}
+
+model Agency {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  legalName              String                    @map("legal_name")
+  timezone               String
+  currency               String                    @db.Char(3)
+  status                 AgencyStatus
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+  memberships            AgencyMembership[]
+  sessions               AuthenticationSession[]
+  authenticationEvents   AuthenticationEvent[]
+  agents                 Agent[]
+  agentAssignments       AgentAssignment[]
+  contributors           Contributor[]
+  contributorAssignments ContributorAssignment[]
+  contributorPlans       ContributorPlan[]
+  contributorObligations ContributorObligation[]
+  contributorInvitations ContributorInvitation[]
+  ledgerAccounts         LedgerAccount[]
+  ledgerJournals         LedgerJournal[]
+  contributions          Contribution[]
+  contributorAllocations ContributionAllocation[]
+  contributorCredits     ContributorCredit[]
+  contributionImports    ContributionImportBatch[]
+
+  @@map("agencies")
+}
+
+model User {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  email                String
+  emailVerifiedAt      DateTime?                 @map("email_verified_at")
+  disabledAt           DateTime?                 @map("disabled_at")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  memberships          AgencyMembership[]
+  credential           PasswordCredential?
+  passwordHistory      PasswordHistory[]
+  sessions             AuthenticationSession[]
+  oneTimeTokens        OneTimeIdentityToken[]
+  mfaFactors           MfaFactor[]
+  authenticationEvents AuthenticationEvent[]
+  agentProfile         Agent?
+  contributions        Contribution[]
+  contributionImports  ContributionImportBatch[]
+
+  @@map("users")
+}
+
+model AgencyMembership {
+  id        String           @id @default(uuid()) @db.Uuid
+  agencyId  String           @map("agency_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  role      MembershipRole
+  status    MembershipStatus
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  agency    Agency           @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([agencyId, userId, role])
+  @@index([agencyId, status])
+  @@map("agency_memberships")
+}
+
+model PasswordCredential {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  passwordHash      String   @map("password_hash")
+  passwordChangedAt DateTime @map("password_changed_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("password_credentials")
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  passwordHash String   @map("password_hash")
+  recordedAt   DateTime @default(now()) @map("recorded_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, recordedAt(sort: Desc)])
+  @@map("password_history")
+}
+
+model AuthenticationSession {
+  id                      String                @id @db.Uuid
+  userId                  String                @map("user_id") @db.Uuid
+  agencyId                String                @map("agency_id") @db.Uuid
+  roles                   Json
+  createdAt               DateTime              @map("created_at")
+  lastActivityAt          DateTime              @map("last_activity_at")
+  expiresAt               DateTime              @map("expires_at")
+  revokedAt               DateTime?             @map("revoked_at")
+  revokedReason           String?               @map("revoked_reason")
+  refreshFamilyId         String                @map("refresh_family_id") @db.Uuid
+  currentRefreshTokenHash String                @map("current_refresh_token_hash")
+  mfaSatisfiedAt          DateTime?             @map("mfa_satisfied_at")
+  user                    User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  agency                  Agency                @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  refreshTokenHistory     RefreshTokenHistory[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([refreshFamilyId])
+  @@map("authentication_sessions")
+}
+
+model RefreshTokenHistory {
+  id              String                @id @default(uuid()) @db.Uuid
+  sessionId       String                @map("session_id") @db.Uuid
+  refreshFamilyId String                @map("refresh_family_id") @db.Uuid
+  tokenHash       String                @unique @map("token_hash")
+  issuedAt        DateTime              @map("issued_at")
+  revokedAt       DateTime?             @map("revoked_at")
+  replacedByHash  String?               @map("replaced_by_hash")
+  session         AuthenticationSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId, issuedAt(sort: Desc)])
+  @@map("refresh_token_history")
+}
+
+model OneTimeIdentityToken {
+  id         String              @id @default(uuid()) @db.Uuid
+  userId     String              @map("user_id") @db.Uuid
+  purpose    OneTimeTokenPurpose
+  tokenHash  String              @unique @map("token_hash")
+  expiresAt  DateTime            @map("expires_at")
+  consumedAt DateTime?           @map("consumed_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+  user       User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, purpose, expiresAt])
+  @@map("one_time_identity_tokens")
+}
+
+model MfaFactor {
+  id                       String        @id @default(uuid()) @db.Uuid
+  userId                   String        @map("user_id") @db.Uuid
+  factorType               MfaFactorType @map("factor_type")
+  protectedSecretReference String?       @map("protected_secret_reference")
+  enabledAt                DateTime      @map("enabled_at")
+  revokedAt                DateTime?     @map("revoked_at")
+  user                     User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, factorType, revokedAt])
+  @@map("mfa_factors")
+}
+
+model AuthenticationEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  agencyId      String?  @map("agency_id") @db.Uuid
+  eventType     String   @map("event_type")
+  occurredAt    DateTime @map("occurred_at")
+  correlationId String?  @map("correlation_id")
+  metadata      Json     @default("{}")
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  agency        Agency?  @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+
+  @@index([userId, occurredAt(sort: Desc)])
+  @@map("authentication_events")
+}
+
+model Agent {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  agencyId               String                    @map("agency_id") @db.Uuid
+  userId                 String?                   @unique @map("user_id") @db.Uuid
+  identifier             String
+  displayName            String                    @map("display_name")
+  email                  String?
+  phone                  String?
+  territory              String?
+  status                 AgentStatus
+  version                Int                       @default(1)
+  deactivatedAt          DateTime?                 @map("deactivated_at")
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+  agency                 Agency                    @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  user                   User?                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignments            AgentAssignment[]
+  contributorAssignments ContributorAssignment[]
+  contributions          Contribution[]
+  contributionImports    ContributionImportBatch[]
+
+  @@unique([agencyId, identifier])
+  @@index([agencyId, status])
+  @@map("agents")
+}
+
+model AgentAssignment {
+  id            String    @id @default(uuid()) @db.Uuid
+  agencyId      String    @map("agency_id") @db.Uuid
+  agentId       String    @map("agent_id") @db.Uuid
+  territory     String
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  agency        Agency    @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  agent         Agent     @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId, agentId, effectiveFrom])
+  @@index([agencyId, territory, effectiveFrom])
+  @@map("agent_assignments")
+}
+
+model Contributor {
+  id              String                  @id @default(uuid()) @db.Uuid
+  agencyId        String                  @map("agency_id") @db.Uuid
+  referenceNumber String                  @map("reference_number")
+  fullName        String                  @map("full_name")
+  email           String?
+  phone           String?
+  address         String?
+  nextOfKin       Json?                   @map("next_of_kin")
+  kycReference    String?                 @map("kyc_reference")
+  status          ContributorStatus
+  version         Int                     @default(1)
+  deactivatedAt   DateTime?               @map("deactivated_at")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  agency          Agency                  @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  assignments     ContributorAssignment[]
+  plans           ContributorPlan[]
+  obligations     ContributorObligation[]
+  invitations     ContributorInvitation[]
+  contributions   Contribution[]
+  credits         ContributorCredit[]
+
+  @@unique([agencyId, referenceNumber])
+  @@index([agencyId, status])
+  @@index([agencyId, email])
+  @@map("contributors")
+}
+
+model ContributorAssignment {
+  id            String      @id @default(uuid()) @db.Uuid
+  agencyId      String      @map("agency_id") @db.Uuid
+  contributorId String      @map("contributor_id") @db.Uuid
+  agentId       String      @map("agent_id") @db.Uuid
+  effectiveFrom DateTime    @map("effective_from")
+  effectiveTo   DateTime?   @map("effective_to")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  agency        Agency      @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contributor   Contributor @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  agent         Agent       @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId, contributorId, effectiveFrom])
+  @@index([agencyId, agentId, effectiveFrom])
+  @@map("contributor_assignments")
+}
+
+model ContributorPlan {
+  id            String                   @id @default(uuid()) @db.Uuid
+  agencyId      String                   @map("agency_id") @db.Uuid
+  contributorId String                   @map("contributor_id") @db.Uuid
+  frequency     ContributorPlanFrequency
+  amountMinor   BigInt                   @map("amount_minor")
+  currency      String                   @db.Char(3)
+  targetMinor   BigInt?                  @map("target_minor")
+  startDate     DateTime                 @map("start_date") @db.Date
+  endDate       DateTime?                @map("end_date") @db.Date
+  status        ContributorPlanStatus
+  version       Int                      @default(1)
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  agency        Agency                   @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contributor   Contributor              @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  obligations   ContributorObligation[]
+
+  @@index([agencyId, contributorId, status])
+  @@index([agencyId, startDate])
+  @@map("contributor_plans")
+}
+
+model ContributorObligation {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  agencyId            String                      @map("agency_id") @db.Uuid
+  contributorId       String                      @map("contributor_id") @db.Uuid
+  planId              String                      @map("plan_id") @db.Uuid
+  dueDate             DateTime                    @map("due_date") @db.Date
+  expectedAmountMinor BigInt                      @map("expected_amount_minor")
+  paidAmountMinor     BigInt                      @default(0) @map("paid_amount_minor")
+  outstandingMinor    BigInt                      @map("outstanding_minor")
+  currency            String                      @db.Char(3)
+  status              ContributorObligationStatus
+  version             Int                         @default(1)
+  policyVersion       String                      @map("policy_version")
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
+  agency              Agency                      @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contributor         Contributor                 @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  plan                ContributorPlan             @relation(fields: [planId], references: [id], onDelete: Restrict)
+  contributions       Contribution[]
+  allocations         ContributionAllocation[]
+
+  @@unique([planId, dueDate])
+  @@index([agencyId, contributorId, dueDate])
+  @@index([agencyId, status, dueDate])
+  @@map("contributor_obligations")
+}
+
+model LedgerAccount {
+  id           String              @id @default(uuid()) @db.Uuid
+  agencyId     String              @map("agency_id") @db.Uuid
+  code         String              @db.VarChar(20)
+  name         String              @db.VarChar(200)
+  type         LedgerAccountType
+  status       LedgerAccountStatus
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  agency       Agency              @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  journalLines LedgerJournalLine[]
+
+  @@unique([agencyId, code])
+  @@index([agencyId, status])
+  @@map("ledger_accounts")
+}
+
+model LedgerJournal {
+  id             String              @id @default(uuid()) @db.Uuid
+  agencyId       String              @map("agency_id") @db.Uuid
+  sourceType     String              @map("source_type") @db.VarChar(80)
+  sourceId       String              @map("source_id") @db.Uuid
+  commandType    String              @map("command_type") @db.VarChar(80)
+  idempotencyKey String              @map("idempotency_key") @db.VarChar(200)
+  currency       String              @db.Char(3)
+  status         LedgerJournalStatus
+  actorId        String              @map("actor_id") @db.Uuid
+  correlationId  String?             @map("correlation_id") @db.VarChar(100)
+  reversalOfId   String?             @map("reversal_of_id") @db.Uuid
+  postedAt       DateTime            @map("posted_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  agency         Agency              @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  lines          LedgerJournalLine[]
+  contribution   Contribution?       @relation("ContributionJournal")
+  reversalOf     LedgerJournal?      @relation("JournalReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversals      LedgerJournal[]     @relation("JournalReversal")
+
+  @@unique([agencyId, sourceType, sourceId])
+  @@unique([agencyId, commandType, idempotencyKey])
+  @@index([agencyId, postedAt])
+  @@map("ledger_journals")
+}
+
+model LedgerJournalLine {
+  id          String          @id @default(uuid()) @db.Uuid
+  journalId   String          @map("journal_id") @db.Uuid
+  accountId   String          @map("account_id") @db.Uuid
+  direction   LedgerDirection
+  amountMinor BigInt          @map("amount_minor")
+  memo        String?
+  journal     LedgerJournal   @relation(fields: [journalId], references: [id], onDelete: Restrict)
+  account     LedgerAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([journalId])
+  @@index([accountId])
+  @@map("ledger_journal_lines")
+}
+
+model Contribution {
+  id             String                    @id @default(uuid()) @db.Uuid
+  agencyId       String                    @map("agency_id") @db.Uuid
+  contributorId  String                    @map("contributor_id") @db.Uuid
+  obligationId   String?                   @map("obligation_id") @db.Uuid
+  agentId        String                    @map("agent_id") @db.Uuid
+  amountMinor    BigInt                    @map("amount_minor")
+  currency       String                    @db.Char(3)
+  paymentMethod  ContributionPaymentMethod @map("payment_method")
+  businessDate   DateTime                  @map("business_date") @db.Date
+  status         ContributionStatus
+  idempotencyKey String                    @map("idempotency_key") @db.VarChar(200)
+  journalId      String                    @unique @map("journal_id") @db.Uuid
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+  agency         Agency                    @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contributor    Contributor               @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  obligation     ContributorObligation?    @relation(fields: [obligationId], references: [id], onDelete: Restrict)
+  agent          Agent                     @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  journal        LedgerJournal             @relation("ContributionJournal", fields: [journalId], references: [id], onDelete: Restrict)
+  allocations    ContributionAllocation[]
+  createdCredits ContributorCredit[]       @relation("CreditSourceContribution")
+  importRows     ContributionImportRow[]
+  user           User?                     @relation(fields: [userId], references: [id])
+  userId         String?                   @db.Uuid
+
+  @@unique([agencyId, idempotencyKey])
+  @@index([agencyId, contributorId, businessDate])
+  @@index([agencyId, agentId, businessDate])
+  @@map("contributions")
+}
+
+model ContributionAllocation {
+  id             String                     @id @default(uuid()) @db.Uuid
+  agencyId       String                     @map("agency_id") @db.Uuid
+  contributionId String                     @map("contribution_id") @db.Uuid
+  obligationId   String?                    @map("obligation_id") @db.Uuid
+  creditId       String?                    @map("credit_id") @db.Uuid
+  amountMinor    BigInt                     @map("amount_minor")
+  allocationType ContributionAllocationType @map("allocation_type")
+  createdAt      DateTime                   @default(now()) @map("created_at")
+  agency         Agency                     @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contribution   Contribution               @relation(fields: [contributionId], references: [id], onDelete: Restrict)
+  obligation     ContributorObligation?     @relation(fields: [obligationId], references: [id], onDelete: Restrict)
+  credit         ContributorCredit?         @relation(fields: [creditId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId, contributionId])
+  @@index([agencyId, obligationId])
+  @@map("contribution_allocations")
+}
+
+model ContributorCredit {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  agencyId             String                   @map("agency_id") @db.Uuid
+  contributorId        String                   @map("contributor_id") @db.Uuid
+  sourceContributionId String                   @map("source_contribution_id") @db.Uuid
+  originalAmountMinor  BigInt                   @map("original_amount_minor")
+  remainingAmountMinor BigInt                   @map("remaining_amount_minor")
+  currency             String                   @db.Char(3)
+  status               ContributorCreditStatus
+  version              Int                      @default(1)
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+  agency               Agency                   @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contributor          Contributor              @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+  sourceContribution   Contribution             @relation("CreditSourceContribution", fields: [sourceContributionId], references: [id], onDelete: Restrict)
+  allocations          ContributionAllocation[]
+
+  @@index([agencyId, contributorId, status])
+  @@map("contributor_credits")
+}
+
+model ContributionImportBatch {
+  id               String                   @id @default(uuid()) @db.Uuid
+  agencyId         String                   @map("agency_id") @db.Uuid
+  uploadedByUserId String                   @map("uploaded_by_user_id") @db.Uuid
+  agentId          String                   @map("agent_id") @db.Uuid
+  originalFilename String                   @map("original_filename") @db.VarChar(255)
+  contentHash      String                   @map("content_hash") @db.VarChar(128)
+  status           ContributionImportStatus
+  totalRows        Int                      @map("total_rows")
+  validRows        Int                      @default(0) @map("valid_rows")
+  invalidRows      Int                      @default(0) @map("invalid_rows")
+  validationErrors Json                     @default("[]") @map("validation_errors")
+  committedAt      DateTime?                @map("committed_at")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  updatedAt        DateTime                 @updatedAt @map("updated_at")
+  agency           Agency                   @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  uploadedBy       User                     @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  agent            Agent                    @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  rows             ContributionImportRow[]
+
+  @@unique([agencyId, contentHash])
+  @@index([agencyId, status, createdAt])
+  @@map("contribution_import_batches")
+}
+
+model ContributionImportRow {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  batchId              String                      @map("batch_id") @db.Uuid
+  rowNumber            Int                         @map("row_number")
+  contributorReference String                      @map("contributor_reference") @db.VarChar(100)
+  collectionDate       DateTime                    @map("collection_date") @db.Date
+  amountMinor          BigInt                      @map("amount_minor")
+  currency             String                      @db.Char(3)
+  paymentMethod        ContributionPaymentMethod   @map("payment_method")
+  bookEntryReference   String                      @map("book_entry_reference") @db.VarChar(150)
+  status               ContributionImportRowStatus
+  errorCode            String?                     @map("error_code") @db.VarChar(80)
+  errorMessage         String?                     @map("error_message") @db.VarChar(500)
+  raw                  Json
+  contributionId       String?                     @unique @map("contribution_id") @db.Uuid
+  batch                ContributionImportBatch     @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  contribution         Contribution?               @relation(fields: [contributionId], references: [id], onDelete: Restrict)
+
+  @@unique([batchId, rowNumber])
+  @@index([batchId, status])
+  @@map("contribution_import_rows")
+}
+
+model ContributorInvitation {
+  id            String      @id @default(uuid()) @db.Uuid
+  agencyId      String      @map("agency_id") @db.Uuid
+  contributorId String      @map("contributor_id") @db.Uuid
+  email         String
+  tokenHash     String      @unique @map("token_hash")
+  expiresAt     DateTime    @map("expires_at")
+  consumedAt    DateTime?   @map("consumed_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  agency        Agency      @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  contributor   Contributor @relation(fields: [contributorId], references: [id], onDelete: Restrict)
+
+  @@index([agencyId, contributorId, expiresAt])
+  @@map("contributor_invitations")
+}
