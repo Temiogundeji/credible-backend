@@ -10,19 +10,24 @@ import { AccountLifecycleService } from './application/account-lifecycle.service
 import { AuthController } from './presentation/auth.controller';
 import { AccessTokenGuard } from './presentation/access-token.guard';
 import { CryptoIdentityIdGenerator, SystemIdentityClock } from '../../infrastructure/security/identity-runtime';
-import { MfaSettingsService } from './application/mfa-settings.service';
+import { AdminMfaService } from './application/mfa-settings.service';
 import { MfaSettingsController } from './presentation/mfa-settings.controller';
+import { AgencyController } from './presentation/agency.controller';
 
+/**
+ * Identity module – wires up all authentication & authorization related services.
+ * The admin MFA implementation (AdminMfaService) is provided as the MfaService token.
+ */
 @Module({
   imports: [PrismaModule],
-  controllers: [AuthController, MfaSettingsController],
+  controllers: [AuthController, MfaSettingsController, AgencyController],
   providers: [
     SystemIdentityClock,
     CryptoIdentityIdGenerator,
+    // Provide AdminMfaService under the MfaService token
     {
-      provide: MfaSettingsService,
-      inject: [IDENTITY_PORTS.MfaFactorRepository, IDENTITY_PORTS.MfaService, IDENTITY_PORTS.AuthenticationEventWriter, SystemIdentityClock],
-      useFactory: (factors, mfa, events, clock): MfaSettingsService => new MfaSettingsService({ factors, mfa, events, now: () => clock.now() }),
+      provide: IDENTITY_PORTS.MfaService,
+      useClass: AdminMfaService,
     },
     AccessTokenGuard,
     {
@@ -197,30 +202,9 @@ import { MfaSettingsController } from './presentation/mfa-settings.controller';
             maxLength: config.getOrThrow<number>('app.passwordMaxLength'),
             historySize: config.getOrThrow<number>('app.passwordHistorySize'),
           },
-          accessTokenTtlSeconds: config.getOrThrow<number>('app.accessTokenTtlSeconds'),
-          refreshTokenTtlSeconds: config.getOrThrow<number>('app.refreshTokenTtlSeconds'),
-          maxActiveSessions: config.getOrThrow<number>('app.maxActiveSessions'),
-          sessionIdleTimeoutSeconds: config.getOrThrow<number>('app.sessionIdleTimeoutSeconds'),
-          privilegedIdleTimeoutSeconds: config.getOrThrow<number>('app.privilegedIdleTimeoutSeconds'),
-          sessionAbsoluteTimeoutSeconds: config.getOrThrow<number>('app.sessionAbsoluteTimeoutSeconds'),
-          privilegedAbsoluteTimeoutSeconds: config.getOrThrow<number>('app.privilegedAbsoluteTimeoutSeconds'),
-          verificationTokenTtlSeconds: config.getOrThrow<number>('app.verificationTokenTtlSeconds'),
-          passwordResetTokenTtlSeconds: config.getOrThrow<number>('app.passwordResetTokenTtlSeconds'),
-        }),
-    },
-    {
-      provide: SessionPolicyService,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService): SessionPolicyService =>
-        new SessionPolicyService({
-          maxActiveSessions: config.getOrThrow<number>('app.maxActiveSessions'),
-          idleTimeoutSeconds: config.getOrThrow<number>('app.sessionIdleTimeoutSeconds'),
-          privilegedIdleTimeoutSeconds: config.getOrThrow<number>('app.privilegedIdleTimeoutSeconds'),
-          absoluteTimeoutSeconds: config.getOrThrow<number>('app.sessionAbsoluteTimeoutSeconds'),
-          privilegedAbsoluteTimeoutSeconds: config.getOrThrow<number>('app.privilegedAbsoluteTimeoutSeconds'),
         }),
     },
   ],
-  exports: [AuthPolicyService, SessionPolicyService, AuthenticationService, AgencyRegistrationService, AccountLifecycleService],
+  exports: [],
 })
 export class IdentityModule {}

@@ -115,7 +115,12 @@ function parseNodeEnv(value: unknown): AppConfig['nodeEnv'] {
 }
 
 function parsePort(value: unknown): number {
-  const port = Number(value ?? 3000);
+  // Some host shells export PORT=0 (Node's "any free port" convention) without
+  // operator intent. ConfigModule lets process.env win over .env, so that stray
+  // value would otherwise override the documented default and fail startup.
+  // Treat 0 as unset; every other invalid value still fails closed.
+  const effective = value === undefined || value === '' || value === '0' ? undefined : value;
+  const port = Number(effective ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('PORT must be an integer between 1 and 65535');
   }

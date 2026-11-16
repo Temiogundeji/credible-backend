@@ -24,6 +24,7 @@ export interface UserRepository {
 export interface AgencyRepository {
   create(input: { legalName: string; timezone: string; currency: string }): Promise<Agency>;
   activate(agencyId: AgencyId): Promise<void>;
+  findById(agencyId: AgencyId): Promise<Agency | null>;
 }
 
 export interface CredentialRepository {

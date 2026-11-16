@@ -99,6 +99,12 @@ export class PrismaAgencyRepository implements AgencyRepository {
   async activate(agencyId: string): Promise<void> {
     await this.prisma.currentExecutor().agency.update({ where: { id: agencyId }, data: { status: 'active' } });
   }
+
+  async findById(agencyId: string): Promise<Agency | null> {
+    const agency = await this.prisma.currentExecutor().agency.findUnique({ where: { id: agencyId } });
+    if (!agency) return null;
+    return { id: agency.id, legalName: agency.legalName, timezone: agency.timezone, currency: agency.currency, status: agency.status };
+  }
 }
 
 @Injectable()
